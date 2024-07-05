@@ -152,10 +152,6 @@ public final class UserService extends AbstractService {
                 return Response.create("07", "06", "Account has been deleted", null);
             }
 
-            //ngambil password lama dari authentication.id()
-
-            // compare password lama dengan password baru, kalo sama ada response tidak boleh sama. kalo tidak sama, newpassword baru di encode
-
             if(!passwordEncoder.matches(req.oldPassword(), user.password())){
                 return Response.create("07","03","Old password is incorect" , null);
             }
@@ -164,9 +160,9 @@ public final class UserService extends AbstractService {
                 return Response.create("07", "04", "New password cannot be the same as the old password", null);
             }
 
-            final String encode = passwordEncoder.encode(req.newPassword());
+            String encode = passwordEncoder.encode(req.newPassword());
 
-            final long saved = userRepository.updatePassword(userId, encode);
+            long saved = userRepository.updatePassword(userId, encode);
             if (0L == saved) {
                 return Response.create("07", "02", "Gagal mereset password", null);
             }

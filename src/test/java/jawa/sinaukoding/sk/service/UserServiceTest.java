@@ -6,6 +6,7 @@ import jawa.sinaukoding.sk.model.request.LoginReq;
 import jawa.sinaukoding.sk.model.request.RegisterBuyerReq;
 import jawa.sinaukoding.sk.model.Response;
 import jawa.sinaukoding.sk.model.request.RegisterSellerReq;
+import jawa.sinaukoding.sk.model.request.ResetPasswordReq;
 import jawa.sinaukoding.sk.repository.UserRepository;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
@@ -15,7 +16,13 @@ import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
+
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -211,4 +218,105 @@ class UserServiceTest {
         Assertions.assertEquals("0900", response.code());
         Assertions.assertEquals("Sukses", response.message());
     }
+
+    @Test
+    void resetPassword_Success() {
+        // Mock user data
+        User user = new User(1L, "Krise", "krise@gmail.com", new BCryptPasswordEncoder().encode("oldPassword"), User.Role.BUYER, null, null, null, OffsetDateTime.now(), null, null);
+        Mockito.when(userRepository.findById(user.id())).thenReturn(Optional.of(user));
+        Mockito.when(passwordEncoder.matches("oldPassword", user.password())).thenReturn(true);
+        Mockito.when(passwordEncoder.encode("newPassword")).thenReturn("encoded-new-password");
+        Mockito.when(userRepository.updatePassword(user.id(), "encoded-new-password")).thenReturn(1L);
+
+        // Mock authentication
+        final Authentication authentication = new Authentication(user.id(), user.role(), true);
+
+        // Create reset password request
+        ResetPasswordReq req = new ResetPasswordReq("oldPassword", "newPassword");
+
+        // Call resetPassword method
+        Response<Object> response = userService.resetPassword(authentication, req, null);
+
+        // Verify the response
+        Assertions.assertEquals("0700", response.code());
+        Assertions.assertEquals("Sukses", response.message());
+        verify(userRepository).updatePassword(user.id(), "encoded-new-password");
+    }
+
+    @Test
+    void resetPassword_WrongOldPassword() {
+        User user = new User(1L, "Krise", "krise@gmail.com", new BCryptPasswordEncoder().encode("oldPassword"), User.Role.BUYER, null, null, null, OffsetDateTime.now(), null, null);
+        Mockito.when(userRepository.findById(user.id())).thenReturn(Optional.of(user));
+        Mockito.when(passwordEncoder.matches("oldPassword", user.password())).thenReturn(false);
+
+        Authentication authentication = new Authentication(user.id(), user.role(), true);
+
+        ResetPasswordReq req = new ResetPasswordReq("oldPassword", "newPassword");
+
+        Response<Object> response = userService.resetPassword(authentication, req, null);
+
+        Assertions.assertEquals("0704", response.code());
+        Assertions.assertEquals("Password lama tidak sesuai", response.message());
+        verify(userRepository, never()).updatePassword(anyLong(), anyString());
+    }
+
+    @Test
+    void resetPassword_SameOldAndNewPassword() {
+        User user = new User(1L, "Krise", "krise@gmail.com", new BCryptPasswordEncoder().encode("oldPassword"), User.Role.SELLER, null, null, null, OffsetDateTime.now(), null, null);
+        Mockito.when(userRepository.findById(user.id())).thenReturn(Optional.of(user));
+        Mockito.when(passwordEncoder.matches("oldPassword", user.password())).thenReturn(true);
+        Mockito.when(passwordEncoder.matches("newPassword", user.password())).thenReturn(true);
+
+        Authentication authentication = new Authentication(user.id(), user.role(), true);
+
+        ResetPasswordReq req = new ResetPasswordReq("oldPassword", "newPassword");
+
+        Response<Object> response = userService.resetPassword(authentication, req, null);
+
+        Assertions.assertEquals("0704", response.code());
+        Assertions.assertEquals("New password cannot be the same as the old password", response.message());
+        verify(userRepository, never()).updatePassword(anyLong(), anyString());
+    }
+
+    @Test
+    void resetPassword_UserNotFound() {
+        Mockito.when(userRepository.findById(1L)).thenReturn(Optional.empty());
+
+        final Authentication authentication = new Authentication(1L, User.Role.BUYER, true);
+
+        ResetPasswordReq req = new ResetPasswordReq("oldPassword", "newPassword");
+
+        Response<Object> response = userService.resetPassword(authentication, req, null);
+
+        Assertions.assertEquals("0701", response.code());
+        Assertions.assertEquals("user not found", response.message());
+        verify(userRepository, never()).updatePassword(anyLong(), anyString());
+    }
+
+    @Test
+    void resetPassword_AccountDeleted() {
+        User user = new User(1L, "krise", "krise@gmail.com", new BCryptPasswordEncoder().encode("oldPassword"), User.Role.SELLER, null, null, 1L, OffsetDateTime.now(), null, OffsetDateTime.now());
+        Mockito.when(userRepository.findById(user.id())).thenReturn(Optional.of(user));
+
+        final Authentication authentication = new Authentication(user.id(), user.role(), true);
+
+        ResetPasswordReq req = new ResetPasswordReq("oldPassword", "newPassword");
+
+        Response<Object> response = userService.resetPassword(authentication, req, null);
+
+        Assertions.assertEquals("0706", response.code());
+        Assertions.assertEquals("Account has been deleted", response.message());
+        verify(userRepository, never()).updatePassword(anyLong(), anyString());
+    }
+
+    @Test
+    void resetPassword_BadRequest() {
+        final Authentication authentication = new Authentication(1L, User.Role.SELLER, true);
+
+        Response<Object> response = userService.resetPassword(authentication, null, null);
+
+        Assertions.assertEquals("0301", response.code());
+        Assertions.assertEquals("bad request", response.message());
+}
+
 }
